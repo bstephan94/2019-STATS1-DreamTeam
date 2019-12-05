@@ -1,0 +1,85 @@
+/* Upload data */
+PROC IMPORT DATAFILE="/home/u39793781/sasuser.v94/DS6371 Statistical Foundations/Kaggle/train.csv"
+		    OUT=WORK.housing
+		    DBMS=CSV
+		    REPLACE;
+RUN;
+
+PROC PRINT DATA=housing; 
+RUN;
+
+/* Remove NAs from Numeric Columns */
+/* GarageYrBlt, MasVnrArea, and LotFrontage */
+DATA housing;
+	SET housing;
+	IF GarageYrBlt = NA THEN GarageYrBlt = ""; 
+	IF MasVnrArea = NA THEN MasVnrArea = ""; 
+	IF LotFrontage = NA THEN LotFrontage = ""; 
+RUN;
+
+PROC PRINT DATA=housing; 
+RUN;
+
+/* Rename variables starting with an integer */
+DATA housing;
+	SET housing;
+	RENAME "1stFlrSF"n = _1stFlrSF;
+	RENAME "2ndFlrSF"n = _2ndFlrSF;
+	RENAME "3SsnPorch"n = _3SsnPorch;
+RUN;
+
+PROC PRINT DATA = housing;
+RUN;
+
+/*Filter data for Neighborhoods of interest */
+DATA Cent_21_Ames; 
+	SET housing;
+	WHERE Neighborhood="NAmes" | Neighborhood="Edwards" | Neighborhood="BrkSide";
+RUN;
+
+/*Scatterplot Sale Price by Living Area by Group*/
+SYMBOL1 V='N' C = green I=none;
+SYMBOL2 V='E' C = red I = none;
+SYMBOL3 V='B' C = blue I = none;
+Title 'Sale Price vs. Living Area by Neighborhood';
+PROC GPLOT data = Cent_21_Ames;
+	PLOT SalePrice * GRLivArea = Neighborhood;
+RUN;
+
+/*Plots Assumptions*/
+PROC GLM DATA = Cent_21_Ames PLOTS = ALL;
+	CLASS Neighborhood;
+	MODEL SalePrice = GrLivArea | Neighborhood / SOLUTION CLPARM TOLERANCE;
+RUN;
+
+/* Dropped Outliers: Data */
+DATA Cent_21_Ames2; SET Cent_21_Ames;
+IF GrLivArea > 4000 THEN delete;
+RUN;
+
+PROC PRINT DATA=Cent_21_Ames2; 
+RUN;
+
+/* Dropped Outliers: Assumptions */
+PROC GLM DATA = Cent_21_Ames2 PLOTS = ALL;
+	CLASS Neighborhood;
+	MODEL SalePrice = GrLivArea | Neighborhood / SOLUTION CLPARM TOLERANCE;
+RUN;
+
+/* Log Transformations (After Outlier Drop) */
+DATA Cent_21_Ames2;
+	SET Cent_21_Ames2;
+	Log_Price = log(SalePrice);
+RUN;
+
+/* Log-Linear Assumptions Check */ 
+PROC GLM DATA = Cent_21_Ames2 PLOTS = ALL;
+	CLASS Neighborhood;
+	MODEL Log_Price = GrLivArea | Neighborhood / SOLUTION CLPARM TOLERANCE;
+RUN;
+
+/* Log-Linear AdjRsq and Int CV PRESS */ 
+PROC GLMSELECT DATA=Cent_21_Ames2;
+	CLASS Neighborhood;
+	MODEL Log_Price = GrLivArea | Neighborhood / SELECTION = Forward (STOP = CV) CVDETAILS = CVPress;
+RUN;
