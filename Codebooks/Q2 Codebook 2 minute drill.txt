@@ -1,0 +1,159 @@
+/* Question 2 */
+/* Import Training Data Set*/
+PROC IMPORT DATAFILE = "/home/u44533688/New Folder/train.csv"
+            OUT = WORK.housingtrain
+            DBMS = CSV
+            REPLACE;
+            DATAROW = 2;
+RUN;
+PROC PRINT DATA = housingtrain;
+RUN;
+/* Data manipulation step */
+DATA housingtrain;
+SET housingtrain;
+    /* Combine all bath count data to make more linear */
+    TotalBaths = FullBath + 0.5*HalfBath + BsmtFullBath + 0.5*BsmtHalfBath;
+    /* log transform of price */
+    Log_Price = LOG(SalePrice);
+    /* Cannot import without SAS reading as character and truncating numbers to w=2. 
+    Would need much longer data step to fix - cor with other variables so drop */
+    DROP LotFrontage;
+    /* No garage - set to year home built */
+    IF GarageYrBlt = "NA" THEN GarageYrBlt = YearBuilt;
+    /* Convert NA for veneer to zero */
+    IF MasVnrArea = "NA" THEN MasVnrArea = "0";
+    /* Drop extreme outliers from training set */
+    IF GrLivArea > 4600 THEN DELETE;
+    /* If using SAS Studio On Demand, name change is needed. 
+    Using local/citrix version does this automatically */
+    RENAME "1stFlrSF"n = _1stFlrSF;
+    RENAME "2ndFlrSF"n = _2ndFlrSF;
+    RENAME "3SsnPorch"n = _3SsnPorch;
+RUN;
+/* Check data manipulation actions */
+PROC PRINT DATA = housingtrain;
+RUN;
+/* Import Test Data Set*/
+PROC IMPORT DATAFILE= "/home/u44533688/New Folder/test.csv"
+            OUT = WORK.housingtest
+            DBMS = CSV
+            REPLACE;
+            DATAROW = 2;
+RUN;
+PROC PRINT DATA = housingtest;
+RUN;
+/* Data manipulation step */
+DATA housingtest;
+SET housingtest;
+    /* Combine all bath count data to make more linear */
+    TotalBaths = FullBath + 0.5*HalfBath + BsmtFullBath + 0.5*BsmtHalfBath;
+    /* log transform of price */
+    Log_Price = LOG(SalePrice);
+    /* Cannot import without SAS reading as character and truncating numbers to w=2. 
+    Would need much longer data step to fix - cor with other variables so drop */
+    DROP LotFrontage;
+    /* No garage - set to year home built */
+    IF GarageYrBlt = "NA" THEN GarageYrBlt = YearBuilt;
+    /* Convert NA for veneer to zero */
+    IF MasVnrArea = "NA" THEN MasVnrArea = "0";
+    /* If using SAS Studio On Demand, name change is needed. 
+    Using local/citrix version does this automatically */
+    RENAME "1stFlrSF"n = _1stFlrSF;
+    RENAME "2ndFlrSF"n = _2ndFlrSF;
+    RENAME "3SsnPorch"n = _3SsnPorch;
+RUN;
+PROC PRINT DATA = housingtest;
+RUN;
+/*Combine training and test data sets*/
+DATA housing2;
+    SET housingtrain housingtest;
+RUN;
+PROC PRINT DATA = housing2; 
+RUN;
+
+
+/* All models use "CV" options to minimize press (overfitting) */
+/* Backward Selection Method - no interactions */
+PROC GLMSELECT DATA = housing2 PLOTS = all;
+    CLASS OverallCond BldgType BsmtExposure BsmtFinType1 CentralAir ExterQual GarageFinish Neighborhood;
+    MODEL Log_Price = OverallCond BldgType BsmtExposure BsmtFinType1 CentralAir ExterQual GarageFinish Neighborhood GrLivArea BsmtFinSF1 GarageArea MasVnrArea OverallQual TotalBaths TotalBsmtSF WoodDeckSF YearBuilt _1stFlrSF
+        / SELECTION = backward (SELECT = cv STOP = cv) SHOWPVALUES CVDETAILS = cvpress;
+    OUTPUT OUT = bresults P = predict;
+RUN;
+
+/*Confidence Intervals for backward selection model*/
+PROC GLM DATA=housing2;
+Class OverallCond BldgType BsmtExposure BsmtFinType1 CentralAir ExterQual GarageFinish Neighborhood;
+Model Log_Price = OverallCond BldgType BsmtExposure BsmtFinType1 CentralAir ExterQual GarageFinish Neighborhood GrLivArea BsmtFinSF1 GarageArea OverallQual TotalBaths TotalBsmtSF WoodDeckSF YearBuilt / solution clparm;
+RUN;
+
+/* Backward Selection Method - no interactions CSV for Kaggle Submission*/
+DATA bresults2;
+    SET bresults;
+    unlogpredict = EXP(predict);
+    IF unlogpredict > 0 THEN SalePrice = unlogpredict;
+    /* Use 100 * Sq footage to estimate any values that are less than 0 and create kaggle submission set */
+    IF unlogpredict < 0 THEN SalePrice = 100*GrLivArea;
+    KEEP id SalePrice;
+    WHERE id > 1460;
+run;
+PROC EXPORT DATA = bresults2 DBMS = csv
+    FILE = "/home/u44533688/New Folder/bresults2.csv"
+    REPLACE;
+run;
+/* Forward Selection Method - no interactions */
+PROC GLMSELECT DATA = housing2 PLOTS = all;
+    CLASS OverallCond BldgType BsmtExposure BsmtFinType1 CentralAir ExterQual GarageFinish Neighborhood;
+    MODEL Log_Price = OverallCond BldgType BsmtExposure BsmtFinType1 CentralAir ExterQual GarageFinish Neighborhood GrLivArea BsmtFinSF1 GarageArea MasVnrArea OverallQual TotalBaths TotalBsmtSF WoodDeckSF YearBuilt _1stFlrSF
+        / SELECTION = forward (SELECT = cv STOP = cv) SHOWPVALUES CVDETAILS = cvpress;
+    OUTPUT OUT = fresults P = predict;
+RUN; 
+
+/*Confidence Intervals for forward selection model*/
+PROC GLM DATA=housing2;
+Class OverallCond BldgType BsmtExposure CentralAir ExterQual GarageFinish Neighborhood;
+Model Log_Price = OverallCond BldgType BsmtExposure CentralAir ExterQual GarageFinish Neighborhood GrLivArea BsmtFinSF1 GarageArea OverallQual TotalBaths TotalBsmtSF WoodDeckSF YearBuilt / solution clparm;
+RUN;
+
+/* Forward Selection Method no Interactions for Kaggle Submission */
+DATA fresults2;
+    SET fresults;
+    unlogpredict = EXP(predict);
+    IF unlogpredict > 0 THEN SalePrice = unlogpredict;
+    /* Use 100 * Sq footage to estimate any values that are less than 0 and create kaggle submission set */
+    IF unlogpredict < 0 THEN SalePrice = 100*GrLivArea;
+    KEEP id SalePrice;
+    WHERE id > 1460;
+RUN;
+PROC EXPORT DATA = fresults2 DBMS = csv
+    FILE = "/home/u44533688/New Folder/fresults2.csv"
+    REPLACE;
+RUN;
+/* Stepwise Selection Method w/ Neighborhood & Numeric Interactions */
+PROC GLMSELECT DATA = housing2 PLOTS = all;
+    CLASS OverallCond BldgType BsmtExposure BsmtFinType1 CentralAir ExterQual GarageFinish Neighborhood;
+    MODEL Log_Price = OverallCond BldgType BsmtExposure BsmtFinType1 CentralAir ExterQual GarageFinish Neighborhood | GrLivArea | BsmtFinSF1 | GarageArea | MasVnrArea | OverallQual | TotalBaths | TotalBsmtSF | WoodDeckSF | YearBuilt | _1stFlrSF @2 
+        / SELECTION = stepwise (SELECT = cv STOP = cv) SHOWPVALUES HIER=SINGLE CVDETAILS = cvpress;
+    OUTPUT OUT = sresults P = predict;
+RUN;
+
+/*Confidence Intervals for stepwise model*/
+PROC GLM DATA=housing2;
+Class OverallCond BldgType BsmtExposure CentralAir ExterQual GarageFinish Neighborhood;
+Model Log_Price = OverallCond BldgType BsmtExposure CentralAir ExterQual GarageFinish Neighborhood GrLivArea BsmtFinSF1 GarageArea GrLivArea*GarageArea OverallQual TotalBaths GarageArea*TotalBaths TotalBsmtSF TotalBsmtSF*Neighborhood BsmtFinSF1*TotalBsmtSF WoodDeckSF GrLivArea*WoodDeckSF GarageArea*WoodDeckSF YearBuilt YearBuilt*Neighborhood BsmtFinSF1*YearBuilt OverallQual*YearBuilt / solution clparm;
+RUN;
+
+/* Stepwise Selection Method w/ Neighborhood & Numeric Interactions for Kaggle Submission */
+DATA sresults2;
+    SET sresults;
+    unlogpredict = EXP(predict);
+    IF unlogpredict > 0 then SalePrice = unlogpredict;
+    /* Use 100 * Sq footage to estimate any values that are less than 0 and create kaggle submission set */
+    IF unlogpredict < 0 then SalePrice = 100*GrLivArea;
+    KEEP id SalePrice;
+    WHERE id > 1460;
+RUN;
+proc export DATA = sresults2 DBMS = csv
+    FILE = "/home/u44533688/New Folder/sresults2.csv"
+    REPLACE;
+RUN;
