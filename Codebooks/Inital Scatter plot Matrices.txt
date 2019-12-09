@@ -1,0 +1,26 @@
+/*Scatter matrix - looking for variables correlated with GrLivArea*/
+
+proc sgscatter data=housingtrain;
+matrix SalePrice GrLivArea LotArea YearBuilt FullBath 
+HalfBath OverallQual Fireplaces OverallCond / diagonal = (histogram);
+run;
+
+proc sgscatter data=housingtrain;
+matrix SalePrice GrLivArea MSSubClass YearRemodAdd TotalBsmtSF 
+BedroomAbvGr KitchenAbvGr TotRmsAbvGrd PoolArea/ diagonal = (histogram);
+run;
+
+proc sgscatter data=housingtrain;
+matrix SalePrice GrLivArea GarageCars GarageArea WoodDeckSF 
+OpenPorchSF EnclosedPorch ScreenPorch MoSold YrSold/ diagonal = (histogram);
+run;
+
+proc sgscatter data=housingtrain;
+matrix SalePrice GrLivArea MasVnrArea BsmtFinSF1 BsmtFinSF2 BsmtUnfSF
+_1stFlrSF _2ndFlrSF LowQualFinSF / diagonal = (histogram);
+run;
+
+proc sgscatter data=housingtrain;
+matrix SalePrice GrLivArea MiscVal _3SsnPorch GarageYrBlt
+BsmtFullBath BsmtHalfBath/ diagonal = (histogram);
+run;
